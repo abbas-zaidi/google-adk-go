@@ -1,0 +1,4 @@
+github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
+github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
+github.com/voocel/litellm v1.6.5 h1:4UaZ0Br9P0+0cJvgrj/V0OBUWi8ILwfSFCDrd0GJbLk=
+github.com/voocel/litellm v1.6.5/go.mod h1:6MBUu3I4DHm7h72Vl+3nqLruSwYmgqMf/I9BGoordJ4=
