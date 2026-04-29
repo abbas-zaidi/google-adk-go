@@ -1,3 +1,15 @@
+// The go:build ignore tag prevents a "main redeclared" conflict
+// when building the whole module. Run this file directly:
+//
+//	go run main.go
+
+//go:build ignore
+
+// main.go — Simple console-mode example using the DeepSeek model with ADK Runner.
+//
+// Usage:
+//
+//	DEEPSEEK_API_KEY=sk-... go run main.go
 package main
 
 import (
@@ -5,70 +17,88 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
+
+	"github.com/abbas-zaidi/google-adk-go/deepseek"
 
 	"github.com/joho/godotenv"
-	"github.com/voocel/litellm"
+	"google.golang.org/adk/agent"
+	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/runner"
+	"google.golang.org/adk/session"
+	"google.golang.org/genai"
 )
 
 func main() {
+	ctx := context.Background()
 
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
+
 	apiKey := os.Getenv("DEEPSEEK_API_KEY")
 	if apiKey == "" {
-		log.Fatal("DEEPSEEK_API_KEY environment variable is required")
+		log.Fatal("DEEPSEEK_API_KEY environment variable not set")
 	}
 
-	client, err := litellm.NewWithProvider("deepseek", litellm.ProviderConfig{
-		APIKey: apiKey,
+	// Create the DeepSeek model using the repo's adapter.
+	llm, err := deepseek.New(
+		deepseek.ModelDeepSeekChat,
+		deepseek.WithAPIKey(apiKey),
+	)
+	if err != nil {
+		log.Fatalf("failed to create model: %v", err)
+	}
+
+	// Build an LLM agent with the model.
+	a, err := llmagent.New(llmagent.Config{
+		Name:        "deepseek-assistant",
+		Model:       llm,
+		Instruction: "You are a helpful AI assistant powered by DeepSeek.",
+		Description: "An agent that uses DeepSeek language model.",
 	})
 	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
+		log.Fatalf("failed to create agent: %v", err)
 	}
 
-	fmt.Println("DeepSeek Examples - From Basic to Advanced")
-	fmt.Println("=========================================")
+	sessionSvc := session.InMemoryService()
 
-	// Example 1: Basic Chat
-	fmt.Println("\n1. Basic Chat Example (DeepSeek Chat)")
-	fmt.Println("-------------------------------------")
-	basicChat(client)
-}
-
-func basicChat(client *litellm.Client) {
-	request := &litellm.Request{
-		Model: "deepseek-chat",
-		Messages: []litellm.Message{
-			{
-				Role:    "system",
-				Content: "You are a helpful AI assistant.",
-			},
-			{
-				Role:    "user",
-				Content: "Explain what DeepSeek is in simple terms.",
-			},
-		},
-		MaxTokens:   litellm.IntPtr(500),
-		Temperature: litellm.Float64Ptr(0.7),
-	}
-
-	ctx := context.Background()
-	response, err := client.Chat(ctx, request)
+	appRunner, err := runner.New(runner.Config{
+		AppName:        "deepseek-app",
+		Agent:          a,
+		SessionService: sessionSvc,
+	})
 	if err != nil {
-		log.Printf("Basic chat failed: %v", err)
-		return
+		log.Fatalf("failed to create runner: %v", err)
 	}
 
-	fmt.Printf("Response: %s\n", response.Content)
-	fmt.Printf("Usage: %d prompt + %d completion = %d total tokens\n",
-		response.Usage.PromptTokens, response.Usage.CompletionTokens, response.Usage.TotalTokens)
+	// Create a session before running the agent.
+	sessionResp, err := sessionSvc.Create(ctx, &session.CreateRequest{
+		AppName:   "deepseek-app",
+		UserID:    "user1",
+		SessionID: "session1",
+	})
+	if err != nil {
+		log.Fatalf("failed to create session: %v", err)
+	}
 
-	// Calculate cost (lazy loads pricing data on first call)
-	if cost, err := litellm.CalculateCostForResponse(response); err == nil {
-		fmt.Printf("Cost: $%.6f (input: $%.6f, output: $%.6f)\n", cost.TotalCost, cost.InputCost, cost.OutputCost)
-	} else {
-		fmt.Printf("Cost calculation: %v\n", err)
+	message := "What is the capital of France?"
+	fmt.Printf("User: %s\n", message)
+
+	msg := genai.NewContentFromText(message, "user")
+	for event, err := range appRunner.Run(ctx, "user1", sessionResp.Session.ID(), msg, agent.RunConfig{}) {
+		if err != nil {
+			log.Fatalf("runner error: %v", err)
+		}
+		if event.IsFinalResponse() && event.Content != nil {
+			var b strings.Builder
+			for _, p := range event.Content.Parts {
+				if p != nil && p.Text != "" {
+					b.WriteString(p.Text)
+				}
+			}
+			fmt.Printf("Agent: %s\n", b.String())
+		}
 	}
 }
